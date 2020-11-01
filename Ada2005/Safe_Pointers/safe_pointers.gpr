@@ -1,0 +1,58 @@
+------------------------------------------------------------------------------
+-- Safe Pointers
+-- Copyright (C) 2005, 2006, 2009 Christoph Karl Walter Grein
+--
+-- This program is free software; you can redistribute it and/or
+-- modify it under the terms of the GNU General Public License
+-- as published by the Free Software Foundation; either version 2
+-- of the License, or any later version.
+--
+-- This program is distributed in the hope that it will be useful,
+-- but WITHOUT ANY WARRANTY; without even the implied warranty of
+-- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+-- GNU General Public License for more details.
+--
+-- You should have received a copy of the GNU General Public License
+-- along with this program; if not, write to the Free Software
+-- Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+--
+-- Bug reports and proposals for improvements are welcome. Please send
+-- them to the eMail address below.
+--
+-- Author's homepage and email address:
+-- eMail:    Christ-Usch.Grein@T-Online.de
+-- Internet: http://www.christ-usch-grein.homepage.t-online.de/
+--
+-- Christoph Karl Walter Grein
+-- Hauptstr. 42
+-- D-86926 Greifenberg
+-- Germany
+------------------------------------------------------------------------------
+
+project Safe_Pointers is
+
+  --====================================================================
+  -- Author    Christoph Grein
+  -- Version   2.0
+  -- Date      11 Februar 2009
+  --====================================================================
+  -- According to AdaCore, best results are obtained by "-O2", "-gnatn".
+  -- This is the Ada 2005 version.
+  --====================================================================
+  -- History
+  -- Author Version   Date    Reason for change
+  --  C.G.    2.0  11.02.2009 "-gnat05"
+  --  C.G.    1.2  11.02.2009 "-gnat95"
+  --  C.G.    1.1  02.12.2006 ("-O2", "-gnatn") rather than deprecated
+  --                          ("-O3", "-gnatN")
+  --  C.G.    1.0  09.11.2005 for Gnat GPL 2005
+  --====================================================================
+
+  for Source_Dirs use (".");
+  for Object_Dir use "GnatLib";
+
+  package Compiler is
+    for Default_Switches ("ada") use ("-O2", "-gnatn", "-gnat05");
+  end Compiler;
+
+end Safe_Pointers;

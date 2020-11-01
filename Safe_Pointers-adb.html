@@ -1,0 +1,94 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+<HEAD>
+   <TITLE>safe_pointers-on_definite_types.adb</TITLE>
+   <META NAME="GENERATOR" CONTENT="Mozilla/3.01Gold [de]C-DT  (Win95; I) [Netscape]">
+   <link rel="shortcut icon" type="image/x-icon" href="../Images/Ada_Body.ico">
+   <!-- Version Datum
+         2.3  09.06.2011 HTML Title corrected
+         2.2  17.05.2011 Added shortcut icon Ada_Body.ico
+         2.1  09.05.2011 Finalize must be idempotent
+         2.0  29.12.2009 Rewritten with new Reference via Accessors
+         1.0  23.07.1999
+   //-->
+</HEAD>
+<BODY TEXT="#000000" BGCOLOR="#FFFFFF" link=#AA5522 vlink=#772200>
+
+<PRE><FONT COLOR="#0000FF">package body </FONT>Safe_Pointers.<A NAME="Body"></A><A HREF="Safe_Pointers-ads.html#Spec">On_Definite_Types</A> <FONT COLOR="#0000FF">is
+
+  function <A NAME="Null_Pointer"></A></FONT><A HREF="Safe_Pointers-ads.html#Null_Pointer">Null_Pointer</A> <FONT COLOR="#0000FF">return </FONT>Safe_Pointer <FONT COLOR="#0000FF">is
+  begin
+    return </FONT>(Ada.Finalization.Controlled <FONT COLOR="#0000FF">with
+            </FONT>Track =&gt; Null_Track);
+  <FONT COLOR="#0000FF">end </FONT>Null_Pointer;
+
+  <FONT COLOR="#0000FF">function <A NAME="="></A></FONT><FONT COLOR="#008080"><A HREF="Safe_Pointers-ads.html#=">&quot;=&quot;</A> </FONT>(Left, Right: Safe_Pointer) <FONT COLOR="#0000FF">return </FONT>Boolean <FONT COLOR="#0000FF">is
+  begin
+    return </FONT>Left.Track.Object = Right.Track.Object;
+  <FONT COLOR="#0000FF">end </FONT><FONT COLOR="#008080">&quot;=&quot;</FONT>;
+
+  <FONT COLOR="#0000FF">procedure <A NAME="Adjust"></A></FONT><A HREF="Safe_Pointers-ads.html#Adjust">Adjust</A> (Pointer: <FONT COLOR="#0000FF">in out </FONT>Safe_Pointer) <FONT COLOR="#0000FF">is
+  begin
+   if </FONT>Pointer.Track /= Null_Track <FONT COLOR="#0000FF">then
+      </FONT>Pointer.Track.Count := Pointer.Track.Count + <FONT COLOR="#800080">1</FONT>;
+    <FONT COLOR="#0000FF">end if</FONT>;
+  <FONT COLOR="#0000FF">end </FONT>Adjust;
+
+  <FONT COLOR="#0000FF">procedure <A NAME="Finalize"></A></FONT><A HREF="Safe_Pointers-ads.html#Finalize">Finalize</A> (Pointer: <FONT COLOR="#0000FF">in out </FONT>Safe_Pointer) <FONT COLOR="#0000FF">is
+  begin
+    if </FONT>Pointer.Track /= Null_Track <FONT COLOR="#0000FF">then
+      </FONT>Pointer.Track.Count := Pointer.Track.Count - <FONT COLOR="#800080">1</FONT>;
+      <FONT COLOR="#0000FF">if </FONT>Pointer.Track.Count = <FONT COLOR="#800080">0 </FONT><FONT COLOR="#0000FF">then  </FONT><FONT COLOR="#008000">-- last pointer
+        </FONT>Free (Pointer.Track.Object);
+        Free (Pointer.Track);
+      <FONT COLOR="#0000FF">end if</FONT>;
+      Pointer.Track := Null_Track;  <FONT COLOR="#008000">-- idempotent</FONT>
+    <FONT COLOR="#0000FF">end if</FONT>;
+  <FONT COLOR="#0000FF">end </FONT>Finalize;
+
+  <FONT COLOR="#0000FF">procedure <A NAME="Allocate"></A></FONT><A HREF="Safe_Pointers-ads.html#Allocate">Allocate</A> (Pointer: <FONT COLOR="#0000FF">in out </FONT>Safe_Pointer) <FONT COLOR="#0000FF">is
+  begin
+    </FONT>Finalize (Pointer);
+    Pointer.Track := <FONT COLOR="#0000FF">new </FONT>Track'(<FONT COLOR="#0000FF">new </FONT>Object, <FONT COLOR="#800080">1</FONT>);
+  <FONT COLOR="#0000FF">end </FONT>Allocate;
+
+  <FONT COLOR="#0000FF">procedure <A NAME="Allocate_Value"></A></FONT><A HREF="Safe_Pointers-ads.html#Allocate_Value">Allocate</A> (Pointer: <FONT COLOR="#0000FF">in out </FONT>Safe_Pointer; Value: <FONT COLOR="#0000FF">in </FONT>Object) <FONT COLOR="#0000FF">is
+  begin
+    </FONT>Finalize (Pointer);
+    Pointer.Track := <FONT COLOR="#0000FF">new </FONT>Track'(<FONT COLOR="#0000FF">new </FONT>Object'(Value), <FONT COLOR="#800080">1</FONT>);
+  <FONT COLOR="#0000FF">end </FONT>Allocate;
+
+  <FONT COLOR="#0000FF">procedure <A NAME="Deallocate"></A></FONT><A HREF="Safe_Pointers-ads.html#Deallocate">Deallocate</A> (Pointer: <FONT COLOR="#0000FF">in out </FONT>Safe_Pointer) <FONT COLOR="#0000FF">is
+  begin
+    if </FONT>Pointer.Track = Null_Track <FONT COLOR="#0000FF">then
+      return</FONT>;
+    <FONT COLOR="#0000FF">end if</FONT>;
+    </FONT>Free (Pointer.Track.Object);
+    Pointer.Track.Count := Pointer.Track.Count - <FONT COLOR="#800080">1</FONT>;
+    <FONT COLOR="#0000FF">if </FONT>Pointer.Track.Count = <FONT COLOR="#800080">0 </FONT><FONT COLOR="#0000FF">then  </FONT><FONT COLOR="#008000">-- last pointer
+      </FONT>Free (Pointer.Track);
+    <FONT COLOR="#0000FF">end if</FONT>;
+    Pointer.Track := Null_Track;
+  <FONT COLOR="#0000FF">end </FONT>Deallocate;
+
+  <FONT COLOR="#0000FF">procedure <A NAME="Assign"></A></FONT><A HREF="Safe_Pointers-ads.html#Assign">Assign</A> (Pointer: <FONT COLOR="#0000FF">in </FONT>Safe_Pointer; Value: <FONT COLOR="#0000FF">in </FONT>Object) <FONT COLOR="#0000FF">is
+  begin
+    </FONT>Pointer.Track.Object.<FONT COLOR="#0000FF">all </FONT>:= Value;
+  <FONT COLOR="#0000FF">end </FONT>Assign;
+
+  <FONT COLOR="#0000FF">function <A NAME="Value"></A></FONT><A HREF="Safe_Pointers-ads.html#Value">Value</A> (Pointer: Safe_Pointer) <FONT COLOR="#0000FF">return </FONT>Object <FONT COLOR="#0000FF">is
+  begin
+    return </FONT>Pointer.Track.Object.<FONT COLOR="#0000FF">all</FONT>;
+  <FONT COLOR="#0000FF">end </FONT>Value;
+
+  <FONT COLOR="#0000FF">function </FONT>Reference (Pointer: Safe_Pointer) <FONT COLOR="#0000FF">return</FONT> Accessor <FONT COLOR="#0000FF">is</FONT> ...;
+
+<FONT COLOR="#0000FF">end </FONT>Safe_Pointers.On_Definite_Types;</PRE>
+
+<PRE>
+<HR WIDTH="100%"></PRE>
+
+<PRE>Back to <A HREF="Safe_Pointers.html#Text">text</A>.</PRE>
+
+</BODY>
+</HTML>

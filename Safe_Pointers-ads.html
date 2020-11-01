@@ -1,0 +1,85 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<HTML>
+<HEAD>
+   <TITLE>safe_pointers-on_definite_types.ads</TITLE>
+   <META NAME="GENERATOR" CONTENT="Mozilla/3.01Gold [de]C-DT  (Win95; I) [Netscape]">
+   <link rel="shortcut icon" type="image/x-icon" href="../Images/Ada_Spec.ico">
+   <!-- Version Datum
+         2.4  13.07.2011  Ada 2012 drops pragma Controlled
+         2.3  09.06.2011  HTML Title corrected
+         2.2  17.05.2011  Added shortcut icon Ada_Spec.ico
+         2.1  09.06.2010  Included Alias again (greyed out)
+         2.0  29.12.2009  Rewritten with new Reference via Accessors
+         1.1  03.12.2009  Description of equivalent operations of access vs. safe pointer
+         1.0  23.07.1999
+   //-->
+</HEAD>
+<BODY TEXT="#000000" BGCOLOR="#FFFFFF" LINK="#AA5522" VLINK="#772200">
+
+<PRE><FONT COLOR="#0000FF">with </FONT>Ada.Finalization, Ada.Unchecked_Deallocation;
+
+<FONT COLOR="#0000FF">generic
+
+  type </FONT>Object <FONT COLOR="#0000FF">is private</FONT>;
+
+<FONT COLOR="#0000FF">package </FONT><A HREF="Safe_Pointers.html#Safe_Pointers">Safe_Pointers</A>.<A NAME="Spec"></A><A HREF="Safe_Pointers-adb.html#Body">On_Definite_Types</A> <FONT COLOR="#0000FF">is
+
+  type </FONT>Safe_Pointer <FONT COLOR="#0000FF">is private</FONT>;
+
+  <FONT COLOR="#0000FF">type</FONT> Accessor (Value: <FONT COLOR="#0000FF">not null access</FONT> Object) <FONT COLOR="#0000FF">is limited private</FONT>;
+
+  <FONT COLOR="#0000FF">function <A NAME="Null_Pointer"></A></FONT><A HREF="Safe_Pointers-adb.html">Null_Pointer</A> <FONT COLOR="#0000FF">return </FONT>Safe_Pointer;
+
+  <FONT COLOR="#0000FF">function <A NAME="="></A></FONT><A HREF="Safe_Pointers-adb.html">&quot;=&quot;</A> (Left, Right: Safe_Pointer) <FONT COLOR="#0000FF">return </FONT>Boolean;
+
+  <FONT COLOR="#0000FF">procedure <A NAME="Allocate"></A></FONT><A HREF="Safe_Pointers-adb.html#Allocate">Allocate</A>   (Pointer: <FONT COLOR="#0000FF">in out </FONT>Safe_Pointer);
+  <FONT COLOR="#0000FF">procedure <A NAME="Allocate_Value"></A></FONT><A HREF="Safe_Pointers-adb.html#Allocate_Value">Allocate</A>   (Pointer: <FONT COLOR="#0000FF">in out </FONT>Safe_Pointer; Value : <FONT COLOR="#0000FF">in     </FONT>Object);
+  <FONT COLOR="#0000FF">procedure <A NAME="Deallocate"></A></FONT><A HREF="Safe_Pointers-adb.html#Deallocate">Deallocate</A> (Pointer: <FONT COLOR="#0000FF">in out </FONT>Safe_Pointer);
+<FONT COLOR="#888888">--procedure Alias      (Pointer: in out Safe_Pointer; Value : access Object);</FONT>
+  <FONT COLOR="#0000FF">procedure <A NAME="Assign"></A></FONT><A HREF="Safe_Pointers-adb.html#Assign">Assign</A>     (Pointer: <FONT COLOR="#0000FF">in     </FONT>Safe_Pointer; Value : <FONT COLOR="#0000FF">in     </FONT>Object);
+  <FONT COLOR="#0000FF">function  <A NAME="Value"></A></FONT><A HREF="Safe_Pointers-adb.html#Value">Value</A>      (Pointer:        Safe_Pointer) <FONT COLOR="#0000FF">        return </FONT>Object;
+  <FONT COLOR="#0000FF">function  </FONT>Reference  (Pointer:        Safe_Pointer)         <FONT COLOR="#0000FF">return</FONT> Accessor;
+
+  <i>-- These are equivalent operations (A: an access object, P: a safe pointer,
+  -- Free an appropriate instantiation of Unchecked_Conversion):</i>
+  <i>--</i>
+  <i>-- A := new T;                         Allocate (P);</i>
+  <i>-- A := new T'(X);                     Allocate (P, X);</i>
+  <i>-- Free (A);                           Deallocate (P);</i>
+  <i>-- A.all := X;                         Assign (P, X);</i>
+  <i>-- X     := A.all;                     X := Value (P);</i>
+  <i>-- A.C   := X.C;                       Reference (P).Value.C := X.C</i>
+
+<FONT COLOR="#0000FF">private
+
+  type </FONT>Object_Pointer <FONT COLOR="#0000FF">is access </FONT>Object;
+  <FONT COLOR="#0000FF">procedure </FONT>Free <FONT COLOR="#0000FF">is new </FONT>Ada.Unchecked_Deallocation (Object, Object_Pointer);
+
+  <FONT COLOR="#0000FF">type </FONT>Track <FONT COLOR="#0000FF">is record</FONT>
+    Object: Object_Pointer;
+    Count : Natural := <FONT COLOR="#800080">0</FONT>;
+  <FONT COLOR="#0000FF">end record</FONT>;
+
+  <FONT COLOR="#0000FF">type </FONT>Tracker <FONT COLOR="#0000FF">is access </FONT>Track;
+  <FONT COLOR="#0000FF">procedure </FONT>Free <FONT COLOR="#0000FF">is new </FONT>Ada.Unchecked_Deallocation (Track, Tracker);
+
+  <A NAME="Null_Track"></A><FONT COLOR="#008000">Null_Track</FONT>: <FONT COLOR="#0000FF">constant </FONT>Tracker := <FONT COLOR="#0000FF">new </FONT>Track;
+
+  <FONT COLOR="#0000FF">type </FONT>Safe_Pointer <FONT COLOR="#0000FF">is new </FONT>Ada.Finalization.Controlled <FONT COLOR="#0000FF">with record
+    <A NAME="Track"></A></FONT><FONT COLOR="#008000">Track</FONT>: Tracker := Null_Track;
+  <FONT COLOR="#0000FF">end record</FONT>;
+
+  <FONT COLOR="#0000FF">procedure <A NAME="Adjust"></A></FONT><A HREF="Safe_Pointers-adb.html#Adjust">Adjust</A>    (Pointer: <FONT COLOR="#0000FF">in out </FONT>Safe_Pointer);
+  <FONT COLOR="#0000FF">procedure <A NAME="Finalize"></A></FONT><A HREF="Safe_Pointers-adb.html#Finalize">Finalize</A>  (Pointer: <FONT COLOR="#0000FF">in out </FONT>Safe_Pointer);
+
+  <FONT COLOR="#0000FF">type</FONT> Accessor (Value: <FONT COLOR="#0000FF">not null access</FONT> Object) <FONT COLOR="#0000FF">is ...</FONT>;
+
+<FONT COLOR="#0000FF">end </FONT>Safe_Pointers.On_Definite_Types;</PRE>
+
+<PRE>
+<HR WIDTH="100%"></PRE>
+
+<PRE>Back to <A HREF="Safe_Pointers.html#Text">text</A>.</PRE>
+
+</BODY>
+</HTML>

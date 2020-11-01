@@ -1,0 +1,496 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<html>
+<head>
+   <title>Safe Pointers</title>
+   <meta name="GENERATOR" content="Mozilla/3.01Gold [de]C-DT  (Win95; I) [Netscape]">
+   <meta name="keywords" lang="en" content="Ada, access types, safe pointers, smart pointers, reference counting">
+   <link rel="shortcut icon" type="image/x-icon" href="Ada.ico">
+   <!-- Version Datum
+         5.0  12.03.2019 Severed from homepage
+         4.10 14.07.2014 Bug fix RM 7.5(2/2) Accessor (full definition)
+         4.9  07.08.2011 Comments added that GNAT GPL 2011 has corrected the bugs
+         4.8  13.07.2011 Ada 2012 drops pragma Controlled
+         4.7  09.07.2011 Added Free for user type
+         4.6  31.05.2011 Link to Smart_Pointers
+         4.5  22.05.2011 Added meta keywords
+         4.4  17.05.2011 Added shortcut icon Ada.ico
+         4.3  09.05.2011 Finalize must be idempotent
+         4.2  09.06.2010 Some remarks about tampering
+         4.1  08.01.2010 Test with dangling pointers was illegal
+         4.0  30.12.2009 Rewritten with new Reference via Accessors
+         3.3  03.12.2009 Minimal code change and doc improvement
+         3.2  18.02.2009 Clarify Ada 95 and Ada 2005 download (no code change)
+         3.1  16.02.2009 Slight improvements on this page (no code change)
+         3.0  12.02.2009 Ada 2005
+         2.2  23.10.2006 Safe_Pointers.txt file corrected
+         2.1  08.05.2005 Code simplification
+         2.0  08.04.2005 New T-Online Homepage, file homepage.html renamed to index.html
+         1.3  27.07.2000 Code update: Safe_Pointers.On_Definite_Types
+         1.2  20.05.2000 Added reference to publication in Ada Letters
+         1.1  30.09.1999 Added reference to publication in Ada User Journal
+         1.0  23.07.1999
+   //-->
+</head>
+<body text="#000000" bgcolor="#FFFFFF" background="../Backgrounds/Sand.gif">
+
+<h2 align="center"><font color="#800000">Safe Pointers</font> <a href="#Publication"><sup>&para;</sup></a></h2>
+
+<h4 align="center">Author: Christoph Karl Walter Grein</h4>
+
+<p><font color="#800000"><b>Updated on 14.07.2014</b>
+<a href="#Download"><b>Download</b></a></font></p>
+
+<p>Access types in Ada have been designed in a way to prevent the occurrence
+of dangling references, i.e. they can never designate objects that have
+gone out of scope. There remains however one problem: When <tt>Unchecked_Deallocation</tt>
+is used in order to reclaim storage, we might access already freed storage
+or, even worse, storage occupied by new objects of different types, unless
+utmost care is taken (this is the very reason why the generic is called
+<i>unchecked</i> deallocation). Thus in the following fragment (with a
+suitable instantiation for <tt>Free</tt>), <tt>B.<b>all</b></tt> no longer
+exists when it is referenced, but no exception is generally raised:</p>
+
+<ul>
+<pre>A, B: Some_Access_Type;
+A := <b>new </b>Accessed_Object;
+B := A;
+Free (A);
+... B.<b>all</b> ...</pre>
+</ul>
+
+<p>(Note however that <tt>A.<b>all</b></tt> would raise <tt>Constraint_Error</tt>.
+<tt>B.<b>all</b></tt> might raise an exception; it depends on what it references
+at the time.)</p>
+
+<p>In Ada83, there was no way to prevent this in a safe way (since we had
+no control about objects going out of scope, we could never know for sure
+how many access objects were currently designating the same object), but
+in Ada95 with the controlled types, we are able to provide an abstraction
+of safe pointers for which dereferencing as in the example above will inevitably
+raise <tt>Constraint_Error</tt>.</p>
+
+<p>Ada2005 has brought further changes, the most important ones in this
+context are the removal of return-by-reference functions and the possibility
+to instantiate certain generics like our safe pointers in local contexts.
+The former language change has necessitated a fundamental code change.
+Hence both versions (Ada95 and Ada2005) are available. This text describes
+the Ada2005 version; the original Ada95 version description is available as
+a MS word document.</p>
+
+<p>As we shall see, our safe pointers work like access types while keeping
+track of all pointers to an object.<SUP><a href="#Garbage Collection">1</A></SUP>
+So the maximum set of operations that we have to provide comprises:</p>
+
+<ul>
+<li>a null pointer (not designating anything) [<b><tt>null</tt></b>]</li>
+
+<li>assignment (to both, pointers and referenced objects)</li>
+
+<li>equality</li>
+
+<li>allocation (with and without a value) [<b><tt>new</tt></b>]</li>
+
+<li>deallocation [<tt>Unchecked_Deallocation</tt>]</li>
+
+<li>dereferencing [<b><tt>all</tt></b>]</li>
+
+<font COLOR="#888888"><li>referencing or aliasing [<tt>'[Unchecked_]Access</tt>] (removed, see below)</li></font>
+</ul>
+
+<p>Note however that Ada provides a plethora of type classes for which
+some of the above operations do not exist: e.g. limited, private, definite,
+indefinit types, and combinations thereof. So defining one root package
+as a container for children providing safe pointer types for different
+type classes is a good idea.</p>
+
+<ul>
+<pre><b>package <a name="Safe_Pointers"></a></b>Safe_Pointers <b>is
+  pragma</b> Pure;
+<b>end </b>Safe_Pointers;</pre>
+</ul>
+
+<p>We will now present a generic child unit providing a safe pointer type
+designating objects of a definite type, i.e. of a type with the maximum
+set of operations.</p>
+
+<p>The idea behind the implementation is to allocate each object designated
+by a safe pointer exactly once and to count all pointers designating the
+same object. Only when this counter is zero can we finalize the pointer,
+i.e. free all occupied storage.
+(<a name="Text"></a>See <a href="Safe_Pointers-ads.html">specification</a>
+and <a href="Safe_Pointers-adb.html">body</a>.)</p>
+
+<p>We will show in a few examples how safe pointers work. For comparison,
+the corresponding statements with access types are also given.</p>
+
+<ul>
+<pre>P, Q: Safe_Pointer;
+A, B: Some_Access_Type;
+... P = Q = Null_Pointer ...
+... A = B = <b>null</b> ...</pre>
+</ul>
+
+<p>After their declaration (without an initial value), they both point
+to nothing (the object with component
+<tt><a href="Safe_Pointers-ads.html#Null_Track">Null_Track</a></tt>
+returned by <tt><a href="Safe_Pointers-ads.html#Null_Pointer">Null_Pointer</a></tt>
+in the case of <tt>P</tt> and <tt>Q</tt> and <b><tt>null</tt></b> in the
+case of <tt>A</tt> and <tt>B</tt>).</p>
+
+<ul>
+<pre>Allocate (P);
+A := <b>new </b>Accessed_Object;</pre>
+</ul>
+
+<p>The call of Allocate decreases the counter of the object designated
+by <tt>P</tt> (currently there is none, so it is finalized) and creates
+a new object and tracker; there is now one pointer to the new object.</p>
+
+<ul>
+<pre>Q := P;
+A := B;</pre>
+</ul>
+
+<p>The assignment decreases the counter of (the object designated by) <tt>Q</tt>
+(again there is none) and increases the counter of <tt>P</tt>; there are
+now two pointers to the object.</p>
+
+<ul>
+<pre>Assign (P, Object);
+... Value (P) = Value (Q) ...
+... Value (P) = Object ...
+A.<b>all </b>:= Accessed_Object;
+... A.<b>all </b>= B.<b>all </b>...</pre>
+</ul>
+
+<p>The call of procedure <tt>Assign</tt> assigns a value to <tt>P</tt>.
+Since <tt>P</tt> and <tt>Q</tt> designate the same object, dereferencing
+either returns the given object. The same is of course true for <tt>A</tt>
+and <tt>B</tt>.</p>
+
+<font color="#888888">(Functionality removed, see below)
+<ul>
+<pre><b>declare
+</b>  O: <b>aliased </b>Accessed_Object;
+  R: Safe_Pointer;
+<b>begin
+</b>  Alias (R, O'Unchecked_Access);
+  R := P;
+<b>end</b>;</pre>
+</ul>
+
+<p><tt>R</tt> points to the aliased object <tt>O</tt>, the counter is one;
+note that the <tt>'Unchecked_Access</tt> attribute has to be used because
+of the accessibility rules. In the assignment, the counter is decremented
+and <tt>R</tt> can be finalized - there is no pointer left designating
+<tt>O</tt>. After the assignment, there are three pointers to the object
+designated by <tt>P</tt>. When <tt>R</tt> leaves its scope, it is finalized
+again, so two pointers remain.</p></font>
+
+<p>So far we have seen nothing special about safe pointers. The big difference
+from access types will be shown in a moment.</p>
+
+<ul>
+<pre>Deallocate (Q);
+... Q = Null_Pointer ...
+... P <font COLOR="#00CC00">=</font> Null_Pointer ...
+... Q = P ...
+... <font COLOR="#00CC00">Value (P)</font> ... -- <i>Constraint_Error
+</i>... Value (Q) ... -- <i>Constraint_Error
+</i>Free (A);
+... A  = <b>null </b>...
+... B <font COLOR="#FF0000">/=</font> <b>null </b>...
+... A.<b>all </b>... -- <i>Constraint_Error
+</i>... <font COLOR="#FF0000">B.<b>all</b></font><b> </b>... -- <i><font COLOR="#FF0000">no</font> Constraint_Error</i></pre>
+</ul>
+
+<p>This fragment deallocates the object designated by <tt>P</tt> and <tt>Q</tt>,
+decreases the counter of <tt>Q</tt> (which is also the counter of <tt>P</tt>),
+and sets <tt>Q</tt> to <tt>Null_Pointer</tt> (this leaves <tt>P</tt> unchanged).
+Although the internal representations of <tt>P</tt> and <tt>Q</tt> are
+now different, the equality operator will return <tt>True</tt> in all three
+cases above, which is not the case for access types as shown. And also
+other than with access types, dereferencing with either pointer (as well
+as with <tt>A</tt>) will inevitably raise <tt>Constraint_Error</tt>, whereas
+dereferencing with <tt>B</tt> will return the old object, although it no
+longer exists. What still exists is the storage location where it had been
+sitting and also the bit pattern at that place, so that <tt>B</tt>, ignorant
+of the facts, interprets it in the usual way.</p>
+
+<p>Since pointers do reference counting, deallocation is actually not needed.
+Assignment of <tt>Null_Pointer</tt> or letting go pointers out of scope also
+deallocates automatically the object as soon as the last pointer has
+disappeared.
+You can write a complete application without ever deallocating without
+leaking storage.
+<tt>Deallocate</tt> is simply provided because it also exists for access
+types.</p>
+
+<p>For each object created, a <a href="Safe_Pointers-ads.html#Track">tracker</a>
+is created as well, which with each allocation or assignment operation
+and also when a pointer is finalized updates the number of pointers designating
+this object. The storage occupied by an object and its tracker are automatically
+reclaimed if there is no pointer left designating this object after such
+an operation.</p>
+
+<p>Storage occupied by an object can also be deallocated explicitly. With
+this operation, any other pointers designating this object are set to a
+null value. Thus, if <tt>X</tt> and <tt>Y</tt> are pointers designating
+the same object, erroneous access through <tt>Y</tt> after deallocation
+of <tt>X</tt> is impossible. The exception <tt>Constraint_Error</tt> is
+raised instead.</p>
+
+<p>There is one problem with safe pointers that also haunts the Ada container
+library: There is no way to write directly to components of composite objects in
+a completely safe way; you must alway take a copy of the whole object, make the
+assignment to the component, then store whole object again.</p>
+
+<p>Thus Ada definitely needs a safe method to return references. There are some
+deliberations in this vein in Ada Issue AI05-142, but whether this will make
+it into the next revision and in which form, even the gods don't know.</p>
+
+<p>A solution which comes near this goal is presented by the function
+<tt>Reference</tt>. It returns an accessor of which only the discriminant is of
+interest: It grants direct access to the object in a nearly uncompromisable
+way.</p>
+
+<ul><pre>
+Reference (P).Value.C := X.C;
+</pre></ul>
+
+<p>where <tt>X</tt> is some object with a component <tt>C</tt>.
+A reference object is limited so it cannot be copied - you can just
+use it for dereferencing. Further while this reference exists, any attempt to
+deallocate the referenced object (the Ada Reference Manual calls this
+<i>tampering</i>) leads to <tt>Program_Error</tt>, so the reference cannot
+become dangling. Lifetimes of such objects tend to be short.</p>
+
+<ul><pre>
+<b>declare</b>
+  <font color="#00CC00">Ref: Accessor := Reference (P);  -- local store</font>
+<b>begin</b>
+  <font color="#00CC00">Ref.Value.C := X.C;</font>
+  <font color="#FF0000">Deallocate (P);  -- Program_Error, Reference still exists!</font>
+<b>exception</b>
+  <b>when</b> Program_Error => <b>null</b>;
+<b>end</b>;  <font color="#00CC00">-- Reference ceases to exist</font>
+Deallocate (P);  <font color="#00CC00">-- OK</font>
+</pre></ul>
+
+<p>Lifetime is even shorter if you don't use a local store as above.
+Here, the reference is finalized directly after the assignment:</p>
+
+<ul><pre>
+Reference  (P).Value.C := X.C;  -- Reference is finalized after assignment
+Deallocate (P);                 -- no Program_Error
+</pre></ul>
+
+<p>In RM language (7.6.1(3/2)), <i>the assignment statement is the master
+of the local reference object</i>.
+(<i>Note:</i> GNAT GPL 2009 does not finalize, it needs a block as above;
+GNAT GPL 2011 works correctly.)</p>
+
+<p>You might think that also the following code shows tampering attempts:</p>
+
+<ul><pre>
+<b>declare</b>
+  Ref: Accessor := Reference (P);
+<b>begin</b>
+  P := Null_Pointer;  -- tampering?
+  Allocate (P);       -- tampering?
+<b>end</b>;  -- Reference ceases to exist
+</pre></ul>
+
+<p>While the reference still exists, <tt>P</tt> stops pointing to the referenced
+value.
+While this is true, it's not really a problem, since the value still exists,
+other than when deallocation is called, so you do not access a dangling pointer.
+(The body of <tt>Allocate</tt> could easily be changed to also raise
+<tt>Program_Error</tt> in this case, but I have not found a way to prevent the
+assignment.
+Consistency requires that either both, assignment and allocation, raise
+<tt>Program_Error</tt> or none do.)</p>
+
+<p>You are even safe against inadvertantly storing a copy of the discriminant
+<tt>Value</tt> in an access type that has a longer lifetime.
+Accessibility checks make the following program fragment illegal.
+(<i>Note:</i> GNAT GPL 2009 still accepts this code; GNAT GPL 2011 works
+correctly.)</p>
+
+<ul><pre>
+<b>declare
+  type</b> Acc_Int <b>is access all</b> Integer;
+  Named: Acc_Int;
+  Anon : <b>access</b> Integer;
+<b>begin</b>
+  <font color="#FF0000">-- Value's accessibility level ist statically deeper than
+  -- that of Named and Anon.</font>
+  <font color="#FF0000">Named</font> := Acc_Int (Reference (P).<font color="#FF0000">Value</font>);  <font color="#FF0000">-- illegal!</font>
+  <font color="#FF0000">Anon</font>  :=          Reference (P).<font color="#FF0000">Value</font> ;  <font color="#FF0000">-- illegal!</font>
+<b>end</b>;
+</pre></ul>
+
+<p>I would also have liked to construct the type <tt>Accessor</tt> in such a
+way that a declaration of an accessor object without initialization by a
+call of <tt>Reference</tt> would have raised <tt>Program_Error</tt>, but I
+didn't find a (satisfactory) way to do so. But also without this, such an
+accessor object is harmless, because it is completely useless.</p>
+
+<font color="#888888">
+<p>(This is the reason why the aliasing functionality has been removed.
+You can find the code still in the Ada 95 version.)
+One severe error however remains possible:</p>
+
+<ul>
+<pre><b>declare
+</b>  O: <b>aliased </b>Accessed_Object;
+  R: Safe_Pointer;
+<b>begin
+</b>  Alias (R, O'Unchecked_Access);
+  P := R;
+<b>end</b>;  -- <i>out-of-scope O remains
+</i>      -- <i>accessible via global P!</i></pre>
+</ul>
+
+<p>We can call this the <i>law of constant malice</i>. This happens because
+we have to use the <tt>'Unchecked_Access</tt> attribute (RM 3.10.2). Inadvertant
+use of the simple <tt>'Access</tt> attribute leads to a disastrous effect:</p>
+
+<ul>
+<pre><b>begin
+  declare</b>
+    O: <b>aliased </b>Accessed_Object;
+    R: Safe_Pointer;
+  <b>begin
+    begin</b>
+      Alias (R, O'Access);
+    <b>exception
+      when</b> Program_Error =&gt; <b>null</b>;
+    <b>end</b>;
+    R := Null_Pointer;
+  <b>end</b>;
+<b>exception
+  when</b> Program_Error =&gt; <b>null</b>;
+<b>end</b>;</pre>
+</ul>
+
+<p><tt>Program_Error</tt> is raised and the pointer's internal representation
+is destroyed leading to complete chaos. We need a double block to cure
+the situation!</p>
+
+<p>As an excercise, the reader is invited to investigate what exactly happens.</p>
+</font>
+
+<p>So safe pointers clean up behind themselves properly; no dangling references
+can ever be produced. The astute reader will however note that this does not
+mean safety against storage leaks.
+We can always create inaccessible islands, e.g. a ring of cyclically connected
+objects that is not accessible from outside.</p>
+
+<p>The really enthusiastic reader might care to construct child packages for
+other type classes.</p>
+
+<p>As a concluding example, the specification of a child package for safe
+pointers on limited indefinite types is given. Only dereferencing
+operations are available for such types. We cannot allocate an object without
+giving an initial value, because the type has unknown discriminants - nor
+can we allocate with an initial value, because assignment is not available.
+So in fact, safe pointers behave exactly like access types for such types
+- the whole package does not make much sense!</p>
+
+<hr width="100%">
+
+<pre><b>with </b>Ada.Finalization;
+
+<b>generic
+
+  type</b> Object (&lt;&gt;) <b>is limited private</b>;
+
+<b>package </b>Safe_Pointers.On_Limited_Indefinite_Types <b>is
+
+  type</b> Safe_Pointer <b>is private</b>;
+
+  <b>type</b> Accessor (Value: <b>not null access</b> Object) <b>is limited private</b>;
+
+  <b>function </b>Null_Pointer <b>return </b>Safe_Pointer;
+
+  <b>function </b>&quot;=&quot; (Left, Right: Safe_Pointer) <b>return </b>Boolean;
+
+  <b>function </b>Reference (Pointer: Safe_Pointer) <b>return</b> Accessor;
+
+<b>private
+
+  type</b> Object_Pointer <b>is access</b> Object;
+
+  <b>type </b>Track <b>is record</b>
+    Object: Object_Pointer;
+    Count : Natural := 0;
+  <b>end record</b>;
+
+  <b>type </b>Tracker <b>is access</b> Track;
+  <b>pragma </b>Controlled (Tracker);
+
+  Null_Track: <b>constant </b>Tracker := <b>new </b>Track;
+
+  <b>type </b>Safe_Pointer <b>is new</b> Ada.Finalization.Controlled <b>with record
+</b>    Track: Tracker := Null_Track;
+  <b>end record</b>;
+
+  <b>procedure </b>Adjust   (Pointer: <b>in out</b> Safe_Pointer);
+  <b>procedure </b>Finalize (Pointer: <b>in out</b> Safe_Pointer);
+
+  <b>type</b> Accessor (Value: <b>not null access</b> Object) <b>is ...</b>;
+
+<b>end </b>Safe_Pointers.On_Limited_Indefinite_Types;</pre>
+
+<p><hr width="100%"></p>
+
+<p><a name="Garbage Collection"></a><sup>1</sup> This is similar to some
+garbage collection algorithms known as <i>Reference Counting</i>.</p>
+
+<p><a name="Download" href="Safe_Pointers.zip">Download</a> Ada 95 and Ada 2005
+packages together with test programs in zip format.</p>
+
+<hr width="100%"/>
+
+<table cellpadding="5">
+<tr>
+  <td><b>History</b></td>
+</tr>
+<tr>
+  <td valign="top">14.07.2014</td> 
+  <td>Bug fix RM 7.5(2/2) Accessor (full definition)</td>
+</tr>
+<tr>
+  <td valign="top">13.07.2011</td>
+  <td>Ada 2012 drops pragma Controlled; didn't do anything anyway, so removed
+      already now</td>
+</tr>
+<tr>
+  <td valign="top">05.07.2011</td>
+  <td>For Ada 2005 version only:<br />
+      Free for client type added (needed when the type has components that
+      need to be freed as well);<br />
+      bug fix in Finalize (must be idempotent)</td>
+</tr>
+<tr>
+  <td>12.02.2009</td>
+  <td>Added an Ada 2005 version</td>
+</tr>
+<tr>
+  <td>1999</td>
+  <td>First release</td>
+</tr>
+</table>
+
+<p>Also see <a href="Smart_Pointers.html">Smart Pointers</a>, an alternative
+implementation.</p>
+
+<p><hr WIDTH="100%"></p>
+
+<p><font color="#800000"><a name="Publication">&para;</a> Published in
+<b>Ada User Journal, Volume 20, Number 2 (Juli 1999)</b><br> and as a reprint in
+<b>Ada Letters, Volume XIX, Number 4, December 1999</b>.</font>
+
+</body>
+</html>
